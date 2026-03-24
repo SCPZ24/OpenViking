@@ -10,6 +10,7 @@ native vector engine, AGFS, embedding provider, VLM provider, and disk space.
 from __future__ import annotations
 
 import json
+import os
 import platform
 import shutil
 import sys
@@ -43,8 +44,19 @@ def _dim(text: str) -> str:
 # Individual check functions
 # ---------------------------------------------------------------------------
 
+
 def _find_config() -> Optional[Path]:
     return resolve_config_path(None, OPENVIKING_CONFIG_ENV, "ov.conf")
+
+
+def _load_config_json(config_path: Path) -> Optional[dict]:
+    """Parse ov.conf as JSON. Returns None if the file is unreadable or not valid JSON."""
+    try:
+        raw = config_path.read_text(encoding="utf-8")
+        raw = os.path.expandvars(raw)
+        return json.loads(raw)
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 def check_config() -> tuple[bool, str, Optional[str]]:
@@ -58,7 +70,9 @@ def check_config() -> tuple[bool, str, Optional[str]]:
         )
 
     try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
+        raw = config_path.read_text(encoding="utf-8")
+        raw = os.path.expandvars(raw)
+        data = json.loads(raw)
     except json.JSONDecodeError as exc:
         return False, f"Invalid JSON in {config_path}", f"Fix syntax error: {exc}"
 
@@ -133,9 +147,8 @@ def check_embedding() -> tuple[bool, str, Optional[str]]:
     if config_path is None:
         return False, "Cannot check (no config file)", None
 
-    try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-    except Exception:
+    data = _load_config_json(config_path)
+    if data is None:
         return False, "Cannot check (config unreadable)", None
 
     embedding = data.get("embedding", {})
@@ -163,9 +176,8 @@ def check_vlm() -> tuple[bool, str, Optional[str]]:
     if config_path is None:
         return False, "Cannot check (no config file)", None
 
-    try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-    except Exception:
+    data = _load_config_json(config_path)
+    if data is None:
         return False, "Cannot check (config unreadable)", None
 
     vlm = data.get("vlm", {})
@@ -192,13 +204,11 @@ def check_disk() -> tuple[bool, str, Optional[str]]:
     workspace = Path.home() / ".openviking"
 
     if config_path:
-        try:
-            data = json.loads(config_path.read_text(encoding="utf-8"))
+        data = _load_config_json(config_path)
+        if data is not None:
             ws = data.get("storage", {}).get("workspace", "")
             if ws:
                 workspace = Path(ws).expanduser()
-        except Exception:
-            pass
 
     check_path = workspace if workspace.exists() else Path.home()
 
